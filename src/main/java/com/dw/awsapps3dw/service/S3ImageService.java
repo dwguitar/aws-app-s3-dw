@@ -11,5 +11,9 @@ public interface S3ImageService {
 
     UploadImageResponse uploadImage(MultipartFile file, String folder) throws IOException;
 
-    ListContentsResponse listContents(String prefix);
+    ListContentsResponse listContents(String prefix, boolean recursive);
+
+    ListContentsResponse listBucketRoot();
+
+    ListContentsResponse listAulaJavaFolder(boolean recursive);
 }

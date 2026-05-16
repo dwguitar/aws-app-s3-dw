@@ -7,5 +7,10 @@ public record AwsProperties(
         String region,
         S3Properties s3
 ) {
-    public record S3Properties(String bucketName) {}
+    public record S3Properties(String bucketName, String defaultPrefix) {
+
+        public String bucketArn() {
+            return "arn:aws:s3:::" + bucketName;
+        }
+    }
 }

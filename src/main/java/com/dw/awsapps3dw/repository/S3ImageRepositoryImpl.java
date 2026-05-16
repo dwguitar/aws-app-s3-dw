@@ -65,14 +65,18 @@ public class S3ImageRepositoryImpl implements S3ImageRepository {
     }
 
     @Override
-    public BucketContents listByPrefix(String prefix) {
+    public BucketContents listByPrefix(String prefix, boolean recursive) {
         String normalizedPrefix = S3PathUtils.normalizePrefix(prefix);
 
-        ListObjectsV2Request request = ListObjectsV2Request.builder()
+        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
                 .bucket(bucketName)
-                .prefix(normalizedPrefix)
-                .delimiter("/")
-                .build();
+                .prefix(normalizedPrefix);
+
+        if (!recursive) {
+            requestBuilder.delimiter("/");
+        }
+
+        ListObjectsV2Request request = requestBuilder.build();
 
         List<DirectoryEntry> directories = new ArrayList<>();
         List<StoredFile> files = new ArrayList<>();
@@ -81,21 +85,25 @@ public class S3ImageRepositoryImpl implements S3ImageRepository {
         do {
             response = s3Client.listObjectsV2(request);
 
-            response.commonPrefixes().forEach(commonPrefix -> {
-                String path = commonPrefix.prefix();
-                String name = path.substring(normalizedPrefix.length());
-                if (name.endsWith("/")) {
-                    name = name.substring(0, name.length() - 1);
-                }
-                directories.add(new DirectoryEntry(name, path));
-            });
+            if (!recursive) {
+                response.commonPrefixes().forEach(commonPrefix -> {
+                    String path = commonPrefix.prefix();
+                    String name = S3PathUtils.relativeName(path, normalizedPrefix);
+                    if (name.endsWith("/")) {
+                        name = name.substring(0, name.length() - 1);
+                    }
+                    if (!name.isBlank()) {
+                        directories.add(new DirectoryEntry(name, path));
+                    }
+                });
+            }
 
             for (S3Object object : response.contents()) {
                 String key = object.key();
                 if (key.equals(normalizedPrefix) || key.endsWith("/")) {
                     continue;
                 }
-                String name = key.substring(normalizedPrefix.length());
+                String name = S3PathUtils.relativeName(key, normalizedPrefix);
                 files.add(new StoredFile(
                         name,
                         key,
@@ -105,11 +113,11 @@ public class S3ImageRepositoryImpl implements S3ImageRepository {
             }
 
             request = request.toBuilder().continuationToken(response.nextContinuationToken()).build();
-        } while (response.isTruncated());
+        } while (Boolean.TRUE.equals(response.isTruncated()));
 
         directories.sort(Comparator.comparing(DirectoryEntry::name));
         files.sort(Comparator.comparing(StoredFile::name));
 
-        return new BucketContents(bucketName, normalizedPrefix, directories, files);
+        return new BucketContents(bucketName, normalizedPrefix, recursive, directories, files);
     }
 }

@@ -9,5 +9,5 @@ public interface S3ImageRepository {
 
     StoredImage upload(String key, InputStream content, long contentLength, String contentType, String fileName);
 
-    BucketContents listByPrefix(String prefix);
+    BucketContents listByPrefix(String prefix, boolean recursive);
 }

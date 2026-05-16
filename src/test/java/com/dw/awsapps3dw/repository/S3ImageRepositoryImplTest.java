@@ -33,7 +33,7 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 @ExtendWith(MockitoExtension.class)
 class S3ImageRepositoryImplTest {
 
-    private static final String BUCKET = "s3-bucket-app-dw-1";
+    private static final String BUCKET = "aws-java-class-s3-863430399807-sa-east-1-an";
 
     @Mock
     private S3Client s3Client;
@@ -42,12 +42,14 @@ class S3ImageRepositoryImplTest {
 
     @BeforeEach
     void setUp() {
-        AwsProperties properties = new AwsProperties("us-east-1", new AwsProperties.S3Properties(BUCKET));
+        AwsProperties properties = new AwsProperties(
+                "sa-east-1",
+                new AwsProperties.S3Properties(BUCKET, "Aula-Java/"));
         repository = new S3ImageRepositoryImpl(s3Client, properties);
     }
 
     @Test
-    void upload_putsObjectAndReturnsMetadata() {
+    void upload_putsObjectInAulaJavaFolder() {
         Instant uploadedAt = Instant.parse("2026-05-16T12:00:00Z");
         when(s3Client.headObject(any(HeadObjectRequest.class))).thenReturn(HeadObjectResponse.builder()
                 .contentLength(3L)
@@ -56,7 +58,7 @@ class S3ImageRepositoryImplTest {
                 .build());
 
         StoredImage result = repository.upload(
-                "imagens/foto.png",
+                "Aula-Java/foto.png",
                 new ByteArrayInputStream("png".getBytes(StandardCharsets.UTF_8)),
                 3L,
                 "image/png",
@@ -66,19 +68,19 @@ class S3ImageRepositoryImplTest {
         verify(s3Client).putObject(putCaptor.capture(), any(RequestBody.class));
 
         assertThat(putCaptor.getValue().bucket()).isEqualTo(BUCKET);
-        assertThat(putCaptor.getValue().key()).isEqualTo("imagens/foto.png");
-        assertThat(result.key()).isEqualTo("imagens/foto.png");
-        assertThat(result.uploadedAt()).isEqualTo(uploadedAt);
+        assertThat(putCaptor.getValue().key()).isEqualTo("Aula-Java/foto.png");
+        assertThat(result.key()).isEqualTo("Aula-Java/foto.png");
     }
 
     @Test
-    void listByPrefix_returnsDirectoriesAndFiles() {
+    void listByPrefix_listsAulaJavaWithDelimiter() {
+        ArgumentCaptor<ListObjectsV2Request> listCaptor = ArgumentCaptor.forClass(ListObjectsV2Request.class);
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
                 .thenReturn(ListObjectsV2Response.builder()
-                        .commonPrefixes(CommonPrefix.builder().prefix("imagens/2026/").build())
+                        .commonPrefixes(CommonPrefix.builder().prefix("Aula-Java/modulo-1/").build())
                         .contents(
                                 S3Object.builder()
-                                        .key("imagens/foto.png")
+                                        .key("Aula-Java/diagrama.png")
                                         .size(100L)
                                         .eTag("\"abc\"")
                                         .lastModified(Instant.parse("2026-05-16T10:00:00Z"))
@@ -86,11 +88,40 @@ class S3ImageRepositoryImplTest {
                         .isTruncated(false)
                         .build());
 
-        BucketContents contents = repository.listByPrefix("imagens/");
+        BucketContents contents = repository.listByPrefix("Aula-Java/", false);
 
-        assertThat(contents.bucket()).isEqualTo(BUCKET);
+        verify(s3Client).listObjectsV2(listCaptor.capture());
+        assertThat(listCaptor.getValue().bucket()).isEqualTo(BUCKET);
+        assertThat(listCaptor.getValue().prefix()).isEqualTo("Aula-Java/");
+        assertThat(listCaptor.getValue().delimiter()).isEqualTo("/");
         assertThat(contents.directories()).hasSize(1);
+        assertThat(contents.directories().getFirst().name()).isEqualTo("modulo-1");
         assertThat(contents.files()).hasSize(1);
-        assertThat(contents.files().getFirst().name()).isEqualTo("foto.png");
+        assertThat(contents.files().getFirst().name()).isEqualTo("diagrama.png");
+    }
+
+    @Test
+    void listByPrefix_recursive_listsAllObjectsUnderPrefix() {
+        ArgumentCaptor<ListObjectsV2Request> listCaptor = ArgumentCaptor.forClass(ListObjectsV2Request.class);
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder()
+                        .contents(
+                                S3Object.builder()
+                                        .key("Aula-Java/modulo-1/aula.pdf")
+                                        .size(200L)
+                                        .eTag("\"def\"")
+                                        .lastModified(Instant.parse("2026-05-16T11:00:00Z"))
+                                        .build())
+                        .isTruncated(false)
+                        .build());
+
+        BucketContents contents = repository.listByPrefix("Aula-Java/", true);
+
+        verify(s3Client).listObjectsV2(listCaptor.capture());
+        assertThat(listCaptor.getValue().delimiter()).isNull();
+        assertThat(contents.recursive()).isTrue();
+        assertThat(contents.directories()).isEmpty();
+        assertThat(contents.files()).hasSize(1);
+        assertThat(contents.files().getFirst().name()).isEqualTo("modulo-1/aula.pdf");
     }
 }

@@ -35,9 +35,27 @@ public class S3Controller {
         return s3ImageService.uploadImage(file, folder);
     }
 
+    /**
+     * Lista conteúdo. Sem prefix usa {@code Aula-Java/} (configurado em aws.s3.default-prefix).
+     * {@code prefix=} lista a raiz do bucket.
+     */
     @GetMapping("/contents")
     public ListContentsResponse listContents(
-            @RequestParam(value = "prefix", required = false, defaultValue = "") String prefix) {
-        return s3ImageService.listContents(prefix);
+            @RequestParam(value = "prefix", required = false) String prefix,
+            @RequestParam(value = "recursive", defaultValue = "false") boolean recursive) {
+        return s3ImageService.listContents(prefix, recursive);
+    }
+
+    /** Lista apenas a raiz do bucket (todos os prefixos de primeiro nível). */
+    @GetMapping("/contents/bucket")
+    public ListContentsResponse listBucketRoot() {
+        return s3ImageService.listBucketRoot();
+    }
+
+    /** Lista a pasta Aula-Java/ do bucket da aula. */
+    @GetMapping("/contents/aula-java")
+    public ListContentsResponse listAulaJava(
+            @RequestParam(value = "recursive", defaultValue = "false") boolean recursive) {
+        return s3ImageService.listAulaJavaFolder(recursive);
     }
 }

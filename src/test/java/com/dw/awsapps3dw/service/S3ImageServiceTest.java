@@ -18,18 +18,20 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
+import com.dw.awsapps3dw.config.AwsProperties;
 import com.dw.awsapps3dw.domain.BucketContents;
 import com.dw.awsapps3dw.domain.DirectoryEntry;
 import com.dw.awsapps3dw.domain.StoredFile;
 import com.dw.awsapps3dw.domain.StoredImage;
-import com.dw.awsapps3dw.repository.S3ImageRepository;
 import com.dw.awsapps3dw.dto.ListContentsResponse;
 import com.dw.awsapps3dw.dto.UploadImageResponse;
+import com.dw.awsapps3dw.repository.S3ImageRepository;
 
 @ExtendWith(MockitoExtension.class)
 class S3ImageServiceTest {
 
-    private static final String BUCKET = "s3-bucket-app-dw-1";
+    private static final String BUCKET = "aws-java-class-s3-863430399807-sa-east-1-an";
+    private static final String DEFAULT_PREFIX = "Aula-Java/";
 
     @Mock
     private S3ImageRepository s3ImageRepository;
@@ -38,32 +40,31 @@ class S3ImageServiceTest {
 
     @BeforeEach
     void setUp() {
-        s3ImageService = new S3ImageServiceImpl(s3ImageRepository, new ImageContentValidator());
+        AwsProperties properties = new AwsProperties(
+                "sa-east-1",
+                new AwsProperties.S3Properties(BUCKET, DEFAULT_PREFIX));
+        s3ImageService = new S3ImageServiceImpl(s3ImageRepository, new ImageContentValidator(), properties);
     }
 
     @Test
-    void uploadImage_validatesAndDelegatesToRepository() throws Exception {
+    void uploadImage_usesDefaultFolderWhenNotProvided() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "foto.png",
                 "image/png",
                 "png".getBytes(StandardCharsets.UTF_8));
 
-        Instant uploadedAt = Instant.parse("2026-05-16T12:00:00Z");
         when(s3ImageRepository.upload(
-                        eq("imagens/foto.png"),
+                        eq("Aula-Java/foto.png"),
                         any(),
                         eq(3L),
                         eq("image/png"),
                         eq("foto.png")))
-                .thenReturn(new StoredImage(BUCKET, "imagens/foto.png", "foto.png", 3L, "image/png", uploadedAt));
+                .thenReturn(new StoredImage(BUCKET, "Aula-Java/foto.png", "foto.png", 3L, "image/png", Instant.now()));
 
-        UploadImageResponse response = s3ImageService.uploadImage(file, "imagens");
+        UploadImageResponse response = s3ImageService.uploadImage(file, null);
 
-        verify(s3ImageRepository).upload(
-                eq("imagens/foto.png"), any(), eq(3L), eq("image/png"), eq("foto.png"));
-        assertThat(response.key()).isEqualTo("imagens/foto.png");
-        assertThat(response.uploadedAt()).isEqualTo(uploadedAt);
+        assertThat(response.key()).isEqualTo("Aula-Java/foto.png");
     }
 
     @Test
@@ -80,25 +81,37 @@ class S3ImageServiceTest {
     }
 
     @Test
-    void listContents_mapsRepositoryResultToDto() {
-        when(s3ImageRepository.listByPrefix("imagens/"))
+    void listContents_usesDefaultPrefixWhenNotProvided() {
+        when(s3ImageRepository.listByPrefix("Aula-Java/", false))
+                .thenReturn(new BucketContents(BUCKET, "Aula-Java/", false, List.of(), List.of()));
+
+        ListContentsResponse response = s3ImageService.listContents(null, false);
+
+        verify(s3ImageRepository).listByPrefix("Aula-Java/", false);
+        assertThat(response.prefix()).isEqualTo("Aula-Java/");
+        assertThat(response.bucketArn()).isEqualTo("arn:aws:s3:::" + BUCKET);
+        assertThat(response.region()).isEqualTo("sa-east-1");
+    }
+
+    @Test
+    void listAulaJavaFolder_listsConfiguredPrefix() {
+        when(s3ImageRepository.listByPrefix("Aula-Java/", true))
                 .thenReturn(new BucketContents(
                         BUCKET,
-                        "imagens/",
-                        List.of(new DirectoryEntry("2026", "imagens/2026/")),
+                        "Aula-Java/",
+                        true,
+                        List.of(),
                         List.of(new StoredFile(
-                                "foto.png",
-                                "imagens/foto.png",
+                                "slides/aula1.pdf",
+                                "Aula-Java/slides/aula1.pdf",
                                 100L,
                                 "\"abc\"",
                                 Instant.parse("2026-05-16T10:00:00Z")))));
 
-        ListContentsResponse response = s3ImageService.listContents("imagens/");
+        ListContentsResponse response = s3ImageService.listAulaJavaFolder(true);
 
-        assertThat(response.bucket()).isEqualTo(BUCKET);
-        assertThat(response.directories()).hasSize(1);
-        assertThat(response.directories().getFirst().name()).isEqualTo("2026");
-        assertThat(response.files()).hasSize(1);
-        assertThat(response.files().getFirst().name()).isEqualTo("foto.png");
+        assertThat(response.recursive()).isTrue();
+        assertThat(response.totalFiles()).isEqualTo(1);
+        assertThat(response.files().getFirst().key()).isEqualTo("Aula-Java/slides/aula1.pdf");
     }
 }
